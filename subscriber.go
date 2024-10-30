@@ -190,7 +190,7 @@ func (s *Subscriber) run() {
 	defer close(s.done)
 
 	dispatcherDone := make(chan struct{})
-	go s.runDispatcher(dispatcherDone)
+	go s.runDispatcherRecover(dispatcherDone)
 
 outer:
 	for {
@@ -252,8 +252,23 @@ outer:
 	}
 }
 
+func (s *Subscriber) runDispatcherRecover(dispatcherDone chan struct{}) {
+	for {
+		if s.ready {
+			break
+		}
+		go s.runDispatcher(dispatcherDone)
+	}
+}
+
 func (s *Subscriber) runDispatcher(dispatcherDone chan struct{}) {
-	defer close(dispatcherDone)
+	defer func() {
+		if r := recover(); r != nil {
+			// Log the panic, but do not close the dispatcherDone channel
+			log.Printf("goroslib runDispatcher panic occurred: %v", r)
+			// Optionally, perform any additional recovery logic here
+		}
+	}()
 
 	cbv := reflect.ValueOf(s.conf.Callback)
 
@@ -263,6 +278,8 @@ func (s *Subscriber) runDispatcher(dispatcherDone chan struct{}) {
 			cbv.Call([]reflect.Value{reflect.ValueOf(msg)})
 
 		case <-s.ctx.Done():
+			// Only close dispatcherDone if no panic occurred
+			close(dispatcherDone)
 			return
 		}
 	}
