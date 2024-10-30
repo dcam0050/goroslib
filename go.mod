@@ -1,4 +1,4 @@
-module github.com/bluenviron/goroslib/v2
+module github.com/dcam0050/goroslib/v2
 
 go 1.21
 
