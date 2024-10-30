@@ -3,6 +3,7 @@ package goroslib
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 
@@ -72,7 +73,8 @@ type Subscriber struct {
 	message             chan interface{}
 
 	// out
-	done chan struct{}
+	done  chan struct{}
+	ready bool
 }
 
 // NewSubscriber allocates a Subscriber. See SubscriberConf for the options.
@@ -153,13 +155,14 @@ func NewSubscriber(conf SubscriberConf) (*Subscriber, error) {
 		return nil, ErrNodeTerminated
 	}
 
-	go s.run()
+	go s.runRecover()
 
 	return s, nil
 }
 
 // Close closes a Subscriber and shuts down all its operations.
 func (s *Subscriber) Close() {
+	s.ready = true
 	s.ctxCancel()
 	<-s.done
 
@@ -167,7 +170,23 @@ func (s *Subscriber) Close() {
 		s.conf.Node.absoluteTopicName(s.conf.Topic))
 }
 
+func (s *Subscriber) runRecover() {
+	for {
+		if s.ready {
+			break
+		}
+		s.run()
+	}
+}
+
 func (s *Subscriber) run() {
+	defer func() {
+		if r := recover(); r != nil {
+			// Recover from the panic and create an appropriate Error to return
+			log.Printf("goroslib subscriber panic occurred: %v", r)
+		}
+	}()
+
 	defer close(s.done)
 
 	dispatcherDone := make(chan struct{})
